@@ -1,22 +1,40 @@
+from dotenv import load_dotenv
+loaded = load_dotenv()
+print("ENV LOADED:", loaded)
+import os  
+print("KEY:", os.getenv("RAZORPAY_KEY_ID"))
 from fastapi import FastAPI
+
 from pydantic import BaseModel
-import os
+
 import subprocess
 import json
 import requests
 from fastapi.middleware.cors import CORSMiddleware
+from routes import users
+
 
 app = FastAPI()
 
-# ----------------------------
-# CORS
-# ----------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Allows Next.js (localhost:3000) to communicate without blocks
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(users.router)
+
+@app.get("/")
+async def root():
+    """
+    Root check endpoint to verify that the server is alive and reachable.
+    """
+    return {"message": "BugScope Core API is online and healthy."}
+# ----------------------------
+# CORS
+# ----------------------------
+
 
 # ----------------------------
 # Setup

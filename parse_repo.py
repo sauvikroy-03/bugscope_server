@@ -27,7 +27,6 @@ for root, _, files in os.walk(repo_path):
 # ----------------------------
 # Example:
 # server/models/trainModel.py → server.models.trainModel
-
 module_map = {}
 
 for path in python_files:

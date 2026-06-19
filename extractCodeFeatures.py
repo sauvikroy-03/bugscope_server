@@ -15,8 +15,6 @@ import sys
 # pattern_for_if=r'^(?![ \t]*#)[ \t]*(?:if|elif)\s+'
 # pattern_for_loops = r'^(?![ \t]*#)[ \t]*(?:for|while)\s+'
 
-
-
 # Function to count effective lines of code (excluding blanks and comments)
 def count_effective_lines(lines):
     count = 0
@@ -78,12 +76,6 @@ def count_comment_lines(lines):
             comment_count += 1
 
     return comment_count
-
-
-
-
-
-
 
 def extract_code_features(repo_path):
     code_features = {}
