@@ -5,6 +5,7 @@ import sys
 import extractFeatures
 import extractCodeFeatures
 import extractGitFeatures
+import predictBugs
 repo_path = os.path.abspath(sys.argv[1])
 
 nodes = []
@@ -120,11 +121,18 @@ graph = {
 
 
 codeFeatures=extractCodeFeatures.extract_code_features(repo_path)
-gitFeatures = extractGitFeatures.extract_git_features(repo_path)
+gitFeatures=extractGitFeatures.extract_git_features(repo_path)
 metrics = extractFeatures.build_graph_metrics(graph,codeFeatures,gitFeatures)
-print(json.dumps({
+
+# print(metrics)
+result={
     "nodes": nodes,
     "edges": edges,
-    "metrics": metrics
-}))
+    "metrics": metrics,
+    
+}
 
+prediction = predictBugs.predict_with_gnn(result)
+result["results"] = prediction
+
+print(json.dumps(result))

@@ -1,21 +1,29 @@
-from pydriller import Repository
 from collections import defaultdict
-import os
+from datetime import datetime, timezone, timedelta
+from pydriller import Repository
 
 
-def extract_git_features(repo_path):
+def extract_git_features(repo_path, months=12):
     """
-    Extract git/process metrics per Python file:
-    - number_of_developers
-    - code_churn
-    - commit_frequency
+    Returns:
+        git_features:
+        {
+            "file.py": [
+                num_developers,
+                code_churn,
+                commit_frequency
+            ]
+        }
     """
+
     file_developers = defaultdict(set)
     file_churn = defaultdict(int)
     file_commits = defaultdict(int)
 
-    for commit in Repository(repo_path).traverse_commits():
-        author = commit.author.name if commit.author else "unknown"
+    since_date = datetime.now(timezone.utc) - timedelta(days=months * 30)
+
+    for commit in Repository(repo_path, since=since_date).traverse_commits():
+        author = commit.author.email if commit.author else "unknown"
 
         for modified_file in commit.modified_files:
             path = modified_file.new_path or modified_file.old_path
@@ -37,13 +45,28 @@ def extract_git_features(repo_path):
 
     git_features = {}
 
-    all_files = set(file_developers.keys()) | set(file_churn.keys()) | set(file_commits.keys())
+    all_files = (
+        set(file_developers.keys())
+        | set(file_churn.keys())
+        | set(file_commits.keys())
+    )
 
     for file_path in all_files:
+        total_commits = file_commits[file_path]
+        commit_frequency = total_commits / months if months > 0 else 0
+
         git_features[file_path] = [
-            len(file_developers[file_path]),   # number_of_developers
-            file_churn[file_path],             # code_churn
-            file_commits[file_path]            # commit_frequency
+            len(file_developers[file_path]),
+            file_churn[file_path],
+            round(commit_frequency, 4),
         ]
+
+        # print(
+        #     f"file: {file_path} | "
+        #     f"developers: {len(file_developers[file_path])} | "
+        #     f"churn: {file_churn[file_path]} | "
+        #     f"commits: {total_commits} | "
+        #     f"commit_frequency: {commit_frequency:.4f}"
+        # )
 
     return git_features

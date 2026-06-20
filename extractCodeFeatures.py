@@ -4,18 +4,7 @@ import ast
 import sys
 
 
-# if len(sys.argv) < 2:
-#     print("Usage: python script.py <repo_path>")
-#     sys.exit(1)
 
-# repo_path = os.path.abspath(sys.argv[1])
-
-# pattern_for_def=r'^(?![ \t]*#)[ \t]*def\s+'
-# pattern_for_class=r'^(?![ \t]*#)[ \t]*class\s+'
-# pattern_for_if=r'^(?![ \t]*#)[ \t]*(?:if|elif)\s+'
-# pattern_for_loops = r'^(?![ \t]*#)[ \t]*(?:for|while)\s+'
-
-# Function to count effective lines of code (excluding blanks and comments)
 def count_effective_lines(lines):
     count = 0
     in_multiline_string = False
@@ -93,7 +82,7 @@ def extract_code_features(repo_path):
                 loc = 0
                 cyclomatic_complexity = 1
                 total_function_lines=0
-              
+
 
                 with open(full_path, 'r', encoding='utf-8') as f:
                     try:
@@ -121,10 +110,10 @@ def extract_code_features(repo_path):
                                 effective_func_lines = count_effective_lines(function_lines)
 
                                 total_function_lines += effective_func_lines
-                             
+
                             elif isinstance(node, ast.ClassDef):
                                 classes += 1
-                              
+
                             elif isinstance(node, ast.For):
                                 loops += 1
                                 cyclomatic_complexity += 1

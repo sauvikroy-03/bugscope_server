@@ -1,4 +1,6 @@
 import gnn
+import networkx as nx
+
 def build_graph_metrics(graph,code_features,gitFeatures):
     nodes = graph["nodes"]
     edges = graph["edges"]
@@ -17,6 +19,18 @@ def build_graph_metrics(graph,code_features,gitFeatures):
 
     # Edge index (for PyTorch Geometric later)
     edge_index = [[], []]
+    #To create a NetworkX dependency Graph to calculate centrality
+    G = nx.DiGraph()
+    for node in nodes:
+      G.add_node(node["id"])
+    for edge in edges:
+      G.add_edge(edge["source"],edge["target"])
+    degree_centrality = nx.degree_centrality(G)
+    in_degree_centrality = nx.in_degree_centrality(G)
+    out_degree_centrality = nx.out_degree_centrality(G)
+    betweenness_centrality = nx.betweenness_centrality(G)
+    closeness_centrality = nx.closeness_centrality(G)
+    pagerank = nx.pagerank(G)
 
     # Fill degrees + edge_index
     for e in edges:
@@ -65,6 +79,15 @@ def build_graph_metrics(graph,code_features,gitFeatures):
     "is_leaf",
     "is_root",
     "dependency_ratio",
+
+    "degree_centrality",
+    "in_degree_centrality",
+    "out_degree_centrality",
+    "betweenness_centrality",
+    "closeness_centrality",
+    "pagerank",
+
+
     "loc",
     "functions",
     "classes",
@@ -88,7 +111,14 @@ def build_graph_metrics(graph,code_features,gitFeatures):
             depth[node_id],#how much deep is the file eg- a/b/main.py
             1 if out_degree[node_id] == 0 else 0, #calculating if leaf node
             1 if in_degree[node_id] == 0 else 0, #calculate if root node
-            ratio[node_id]
+            ratio[node_id],
+
+            degree_centrality.get(node_id, 0),
+            in_degree_centrality.get(node_id, 0),
+            out_degree_centrality.get(node_id, 0),
+            betweenness_centrality.get(node_id, 0),
+            closeness_centrality.get(node_id, 0),
+            pagerank.get(node_id, 0)
         ]
         for node_id in node_ids
     }
@@ -113,11 +143,14 @@ def build_graph_metrics(graph,code_features,gitFeatures):
                                                                              #we can do this code_feat = code_features[node_id] if we are sure that every node_id will be present in code_features but to be safe we are using get method with default value as list of 0s
 
         final_features[node_id] = graph_feat + code_feat+git_feat
-    
+        # labels[node_id] = labels.get(node_id, 0)
+
     gnnConverted=gnn.convert_to_gnn_format(final_features,index_map,edge_index)
+
     return {
         "features": final_features,
         "feature_names": feature_names,
+        # "labels":labels,
         "edge_index": edge_index,
         "index_map": index_map,
         "X":gnnConverted["X"],
