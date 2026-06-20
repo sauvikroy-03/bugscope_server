@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from routes import users, llm  # ← added llm
-
+from routes import summariser
 app = FastAPI()
 
 app.add_middleware(
@@ -21,6 +21,7 @@ app.add_middleware(
 
 app.include_router(users.router)
 app.include_router(llm.router)  # ← added
+app.include_router(summariser.router)  # ← added
 
 
 @app.get("/")

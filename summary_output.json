@@ -1,0 +1,50 @@
+{
+  "file": "C:/BugScope_Server/repos/fastapi/tests/test_tutorial/test_custom_docs_ui/test_tutorial001.py",
+  "module_summary": "This module tests the custom documentation UI for a FastAPI application using pytest. It sets up a static directory, starts a TestClient for the app, and verifies that Swagger UI and Redoc are accessible at /docs and /redoc respectively. The test_swagger_ui_html function checks if the Swagger UI is correctly loaded with necessary scripts and stylesheets. The test_swagger_ui_oauth2_redirect_html function ensures that the OAuth2 redirect works as expected. The test_redoc_html function verifies that Redoc is accessible and includes the correct script for rendering. The test_api function tests a GET request to /users/john, expecting a 200 status code with the message \"Hello john\". This module fits into the project by providing integration tests for the custom documentation UI endpoints of the FastAPI application.",
+  "total_functions": 5,
+  "functions": [
+    {
+      "name": "client",
+      "args": [],
+      "lineno": 11,
+      "returns": "",
+      "summary": "Initializes a static directory and sets up a TestClient for the application, yielding it to tests, then removes the static directory."
+    },
+    {
+      "name": "test_swagger_ui_html",
+      "args": [
+        "client"
+      ],
+      "lineno": 23,
+      "returns": "",
+      "summary": "Tests the Swagger UI HTML endpoint by making a GET request and asserting the response status code and content."
+    },
+    {
+      "name": "test_swagger_ui_oauth2_redirect_html",
+      "args": [
+        "client"
+      ],
+      "lineno": 31,
+      "returns": "",
+      "summary": "Tests the OAuth2 redirect endpoint by making a GET request and asserting the response status code and content."
+    },
+    {
+      "name": "test_redoc_html",
+      "args": [
+        "client"
+      ],
+      "lineno": 38,
+      "returns": "",
+      "summary": "Tests the Redoc HTML endpoint by making a GET request and asserting the response status code and content."
+    },
+    {
+      "name": "test_api",
+      "args": [
+        "client"
+      ],
+      "lineno": 45,
+      "returns": "",
+      "summary": "Tests an API endpoint by making a GET request and asserting the response status code, JSON structure, and message."
+    }
+  ]
+}

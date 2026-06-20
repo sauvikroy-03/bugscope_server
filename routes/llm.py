@@ -10,10 +10,38 @@ from typing import List, Any, Literal
 from google import genai
 from google.genai import types
 
+from glob import glob
+
 router = APIRouter(prefix="/api/llm", tags=["LLM"])
 
 gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
+
+def locate_absolute_path(relative_path: str) -> str:
+    """
+    Searches inside the local 'repos' directory to locate the absolute path 
+    of a file matching the trailing relative layout path structure.
+    """
+    # 1. Standardize slashes to forward slashes
+    clean_rel = relative_path.replace("\\", "/")
+    
+    # 2. Extract just the filename (e.g., 'getTrainsStatus.py')
+    filename = clean_rel.split("/")[-1]
+    
+    # 3. Create a recursive search query targeting the 'repos' directory
+    # This is the direct Python equivalent of running: Get-ChildItem -Recurse
+    search_pattern = os.path.join("repos", "**", filename)
+    matches = glob(search_pattern, recursive=True)
+    
+    # 4. Check our list matches to find the one matching your path layout
+    for match in matches:
+        normalized_match = match.replace("\\", "/")
+        if normalized_match.endswith(clean_rel):
+            # Convert to an absolute system path with forward slashes
+            return os.path.abspath(normalized_match).replace("\\", "/")
+            
+    # Fallback to a basic merge layout if the search finds nothing
+    return os.path.abspath(os.path.join("repos", clean_rel)).replace("\\", "/")
 
 # ── Models ────────────────────────────────────────────────────────────────────
 
@@ -26,7 +54,12 @@ class LLMRequest(BaseModel):
 
 def simplify_file_result(r: dict):
     metrics = r.get("important_metrics", {})
+    raw_path = r.get("file") or ""
+    
+    # 💡 Dynamically scans the directories to find the file (just like PowerShell!)
+    absolute_path = locate_absolute_path(raw_path)
     return {
+        "full_path":        absolute_path,
         "file":        r.get("file"),
         "risk_score":  r.get("risk_score"),
         "risk_level":  r.get("risk_level"),
@@ -208,6 +241,7 @@ def get_suggestions(req: LLMRequest):
                 })
 
             cards.append({
+                "full_path":      f.get("full_path", ""),
                 "file":          f["file"],
                 "risk_level":    f["risk_level"],
                 "risk_score":    f["risk_score"],

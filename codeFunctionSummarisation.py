@@ -10,11 +10,18 @@ import time
 from typing import TypedDict, List, Optional
 
 from langgraph.graph import StateGraph, END
-from google import genai
-from google.genai import types
 import requests
 
-gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+# ── Mistral (now the "pro" tier LLM) ──────────────────────────
+from mistralai.client import Mistral
+
+mistral_client = Mistral(api_key=os.getenv("MISTRAL_API_KEY"))
+
+# ── Gemini (kept, commented out, in case you switch back) ───
+# from google import genai
+# from google.genai import types
+#
+# gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 
 # ══════════════════════════════════════════════════════════════
@@ -22,7 +29,7 @@ gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 # ══════════════════════════════════════════════════════════════
 
 FILE_PATH = "routes/llm.py"   # 👈 change to any .py file
-PLAN      = "pro"             # 👈 "free" = ollama | "pro" = gemini
+PLAN      = "free"             # 👈 "free" = ollama | "pro" = mistral
 
 
 # ══════════════════════════════════════════════════════════════
@@ -44,16 +51,16 @@ class SummarizerState(TypedDict):
 # 3. LLM CALLERS
 # ══════════════════════════════════════════════════════════════
 
-def call_ollama(prompt: str) -> str:
+def call_ollama(prompt: str, num_predict: int = 800) -> str:
     """Always available — local model, no rate limits"""
     try:
         response = requests.post(
             "http://127.0.0.1:11434/api/generate",
             json={
-                "model"  : "phi4-mini:latest",
+                "model"  : "qwen2.5-coder:3b",
                 "prompt" : prompt,
                 "stream" : False,
-                "options": {"temperature": 0.1, "num_predict": 800}
+                "options": {"temperature": 0.1, "num_predict": num_predict}
             },
             timeout=180
         )
@@ -62,66 +69,217 @@ def call_ollama(prompt: str) -> str:
         return f"Ollama error: {str(e)}"
 
 
-def call_gemini(prompt: str, retry: bool = True) -> str:
-    """Gemini with automatic fallback to Ollama on any error"""
+def call_mistral(prompt: str, retry: bool = True, max_tokens: int = 1024) -> str:
+    """Mistral call with rate-limit-aware retry.
+
+    - RPM-style 429s: short backoff (15s), retry once, then fall back to Ollama.
+    - RPD-style 429s (daily quota exhausted): retrying won't help — fall
+      back to Ollama immediately.
+    - Any other error: fall back to Ollama.
+    """
     try:
-        response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.1,
-                max_output_tokens=1024
-            )
+        response = mistral_client.chat.complete(
+            model="mistral-large-latest",
+            messages=[
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.1,
+            max_tokens=max_tokens,
         )
-        # wait between calls to avoid rate limit
+        # pacing delay to stay comfortably under per-minute limits
         time.sleep(4)
-        return response.text or "No response from Gemini."
+        return response.choices[0].message.content or "No response from Mistral."
 
     except Exception as e:
         err = str(e)
+        lowered = err.lower()
 
-        # rate limit → wait and retry once
-        if "429" in err or "quota" in err.lower() or "exhausted" in err.lower():
+        is_rate_limited = "429" in err or "quota" in lowered or "exhausted" in lowered or "rate limit" in lowered
+        is_daily_quota = "per day" in lowered or "rpd" in lowered or "daily" in lowered
+
+        if is_rate_limited and is_daily_quota:
+            print("  ⚠️ Mistral daily quota exhausted — falling back to Ollama")
+            return call_ollama(prompt)
+
+        if is_rate_limited:
             if retry:
-                print("  ⚠️ Gemini rate limit — waiting 60s then retrying...")
-                time.sleep(60)
-                return call_gemini(prompt, retry=False)
-            else:
-                print("  ⚠️ Gemini still rate limited — falling back to Ollama")
-                return call_ollama(prompt)
+                print("  ⚠️ Mistral RPM limit hit — waiting 15s then retrying once...")
+                time.sleep(15)
+                return call_mistral(prompt, retry=False, max_tokens=max_tokens)
+            print("  ⚠️ Mistral still rate limited — falling back to Ollama")
+            return call_ollama(prompt)
 
-        # any other error → fallback to ollama
-        print(f"  ⚠️ Gemini failed ({err[:80]}) — falling back to Ollama")
+        print(f"  ⚠️ Mistral failed ({err[:120]}) — falling back to Ollama")
         return call_ollama(prompt)
 
 
-def call_llm(prompt: str, plan: str) -> str:
+# ── Original Gemini caller — kept for reference / easy revert ──
+# def call_gemini(prompt: str, retry: bool = True, max_tokens: int = 1024) -> str:
+#     """Gemini call with rate-limit-aware retry.
+#
+#     - RPM-style 429s: short backoff (15s), retry once, then fall back to Ollama.
+#     - RPD-style 429s (daily quota exhausted): retrying won't help — fall
+#       back to Ollama immediately.
+#     - Any other error: fall back to Ollama.
+#     """
+#     try:
+#         response = gemini_client.models.generate_content(
+#             model="gemini-2.5-flash",
+#             contents=prompt,
+#             config=types.GenerateContentConfig(
+#                 temperature=0.1,
+#                 max_output_tokens=max_tokens
+#             )
+#         )
+#         time.sleep(4)
+#         return response.text or "No response from Gemini."
+#
+#     except Exception as e:
+#         err = str(e)
+#         lowered = err.lower()
+#
+#         is_rate_limited = "429" in err or "quota" in lowered or "exhausted" in lowered
+#         is_daily_quota = "per day" in lowered or "rpd" in lowered or "daily" in lowered
+#
+#         if is_rate_limited and is_daily_quota:
+#             print("  ⚠️ Gemini daily quota exhausted — falling back to Ollama")
+#             return call_ollama(prompt)
+#
+#         if is_rate_limited:
+#             if retry:
+#                 print("  ⚠️ Gemini RPM limit hit — waiting 15s then retrying once...")
+#                 time.sleep(15)
+#                 return call_gemini(prompt, retry=False, max_tokens=max_tokens)
+#             print("  ⚠️ Gemini still rate limited — falling back to Ollama")
+#             return call_ollama(prompt)
+#
+#         print(f"  ⚠️ Gemini failed ({err[:120]}) — falling back to Ollama")
+#         return call_ollama(prompt)
+
+
+def call_llm(prompt: str, plan: str, max_tokens: int = 1024) -> str:
     if plan == "pro":
-        return call_gemini(prompt)
-    return call_ollama(prompt)
+        return call_mistral(prompt, max_tokens=max_tokens)
+        # return call_gemini(prompt, max_tokens=max_tokens)   # 👈 old Gemini path
+    return call_ollama(prompt, num_predict=max_tokens)
 
 
 # ══════════════════════════════════════════════════════════════
-# 4. JSON PARSER — robust
+# 4. JSON PARSER — robust, with truncation detection AND
+#    per-entry recovery (smaller/local models often emit one
+#    malformed entry — e.g. an unescaped quote — inside an
+#    otherwise valid array; we shouldn't lose every entry for that)
 # ══════════════════════════════════════════════════════════════
 
-def parse_llm_json(raw: str) -> list:
-    """Robustly extract JSON array from LLM response"""
+def _strip_fences(raw: str) -> str:
     clean = raw.strip()
-
-    # strip all markdown fence variants
     for fence in ["```json", "```JSON", "```"]:
         clean = clean.replace(fence, "")
-    clean = clean.strip()
+    return clean.strip()
 
-    # find JSON array boundaries
+
+def _split_top_level_objects(array_body: str) -> List[str]:
+    """Split the inside of a JSON array into individual {...} object
+    strings by tracking brace depth, rather than naive comma-splitting
+    (commas can legitimately appear inside string values)."""
+    objects = []
+    depth = 0
+    current = []
+    in_string = False
+    escape_next = False
+
+    for ch in array_body:
+        if escape_next:
+            escape_next = False
+            if depth > 0:
+                current.append(ch)
+            continue
+
+        if ch == "\\" and in_string:
+            escape_next = True
+            if depth > 0:
+                current.append(ch)
+            continue
+
+        if ch == '"':
+            in_string = not in_string
+
+        if ch == "{" and not in_string:
+            depth += 1
+        if depth > 0:
+            current.append(ch)
+        if ch == "}" and not in_string:
+            depth -= 1
+            if depth == 0:
+                objects.append("".join(current))
+                current = []
+
+    return objects
+
+
+def parse_llm_json_lenient(raw: str) -> list:
+    """Recover as many valid {...} entries as possible from a JSON array,
+    even if one or more entries are malformed (e.g. an unescaped quote
+    inside a string value — common with smaller local models)."""
+    clean = _strip_fences(raw)
+
     start = clean.find("[")
-    end   = clean.rfind("]") + 1
+    end = clean.rfind("]") + 1
 
-    if start == -1 or end == 0:
+    if start == -1:
         raise ValueError(f"No JSON array found. Raw: {clean[:200]}")
+    if end == 0:
+        raise ValueError(
+            f"TRUNCATED: JSON array was cut off (no closing ']'). "
+            f"Raw length: {len(clean)} chars"
+        )
 
-    return json.loads(clean[start:end])
+    array_body = clean[start + 1:end - 1]
+    object_strings = _split_top_level_objects(array_body)
+
+    parsed = []
+    failed = 0
+    for obj_str in object_strings:
+        try:
+            parsed.append(json.loads(obj_str))
+        except json.JSONDecodeError:
+            failed += 1
+
+    if failed:
+        print(f"  ⚠️ {failed}/{len(object_strings)} entries had malformed JSON and were skipped")
+
+    if not parsed:
+        raise ValueError(f"All {len(object_strings)} entries failed to parse. Raw: {clean[:200]}")
+
+    return parsed
+
+
+def parse_llm_json(raw: str) -> list:
+    """Try a clean whole-array parse first (fast path, works for
+    well-formed model output). Fall back to per-entry recovery if the
+    whole array doesn't parse — this is the common path for Ollama/local
+    model output that has one bad entry in an otherwise valid array.
+    Truncation (no closing bracket) is still raised distinctly so callers
+    can react by retrying with a bigger token budget instead of trying
+    to "recover" from an array that was never finished.
+    """
+    clean = _strip_fences(raw)
+
+    start = clean.find("[")
+    end = clean.rfind("]") + 1
+
+    if start == -1:
+        raise ValueError(f"No JSON array found. Raw: {clean[:200]}")
+    if end == 0:
+        raise ValueError(
+            f"TRUNCATED: JSON array was cut off (no closing ']'). "
+            f"Raw length: {len(clean)} chars"
+        )
+
+    try:
+        return json.loads(clean[start:end])
+    except json.JSONDecodeError:
+        return parse_llm_json_lenient(raw)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -158,8 +316,10 @@ def parse_functions(state: SummarizerState) -> SummarizerState:
             args      = [arg.arg for arg in node.args.args]
             docstring = ast.get_docstring(node) or ""
             start     = node.lineno - 1
+            full_end  = getattr(node, "end_lineno", start + 30)
             end       = min(start + 30, len(lines))
             body_snip = "\n".join(lines[start:end])
+            is_truncated = full_end > end
 
             returns = ""
             if node.returns:
@@ -175,6 +335,7 @@ def parse_functions(state: SummarizerState) -> SummarizerState:
                 "body_snippet": body_snip,
                 "lineno"      : node.lineno,
                 "returns"     : returns,
+                "truncated"   : is_truncated,
             })
 
     print(f"   Found {len(functions)} functions")
@@ -209,10 +370,11 @@ Rules:
 - Mention actual function names, class names, or endpoints from the code
 - Do NOT invent features that are not in the code
 - No bullet points, no headers — just 3 plain sentences
+- Do NOT start with phrases like "Okay", "Let's dive in", "Sure", or any preamble — begin directly with the first sentence of the summary
 - Be concise and developer-friendly"""
 
-    summary = call_llm(prompt, state["plan"])
-    return {**state, "module_summary": summary}
+    summary = call_llm(prompt, state["plan"], max_tokens=600)
+    return {**state, "module_summary": summary.strip()}
 
 
 # ── Node 4: Summarize ALL functions in ONE call ───────────────
@@ -225,12 +387,17 @@ def summarize_functions(state: SummarizerState) -> SummarizerState:
     if not functions:
         return {**state, "function_summaries": []}
 
-    # build one block with ALL functions
     all_functions_text = ""
     for i, fn in enumerate(functions, 1):
+        truncated_note = (
+            " (NOTE: this snippet is truncated — the function continues "
+            "beyond what's shown here. Do NOT claim it has no return "
+            "statement based on this snippet alone.)"
+            if fn.get("truncated") else ""
+        )
         all_functions_text += f"""
 Function {i}:
-  Name      : {fn['name']}
+  Name      : {fn['name']}{truncated_note}
   Arguments : {', '.join(fn['args']) or 'none'}
   Returns   : {fn['returns'] or 'not annotated'}
   Docstring : {fn['docstring'] or 'none'}
@@ -250,25 +417,45 @@ For EACH function write exactly 2 sentences:
 
 Critical rules you MUST follow:
 - If you see a return statement → state exactly what it returns
-- If there is no return statement → say "Returns None."
+- If there is no return statement AND the snippet is not marked truncated → say "Returns None."
+- If the snippet is marked truncated and no return is visible, say "Return behavior not visible in this snippet."
 - If it prints something → mention it
 - If it modifies external state → mention it
 - NEVER say "does not return" if there is a return statement in the code
 - Be specific to the actual code shown — no generic descriptions
 
-You MUST respond with ONLY a valid JSON array — no markdown, no explanation, no fences:
+CRITICAL JSON FORMATTING RULES:
+- You MUST respond with ONLY a valid JSON array — no markdown, no explanation, no fences
+- Any double-quote character inside a "summary" string MUST be escaped as \\"
+- Do not use unescaped quotes, smart quotes, or line breaks inside string values
+
 [
   {{"name": "exact_function_name", "summary": "Sentence 1. Sentence 2."}},
   {{"name": "exact_function_name", "summary": "Sentence 1. Sentence 2."}}
 ]"""
 
-    raw = call_llm(prompt, state["plan"])
+    token_budget = min(8192, 300 * len(functions) + 500)
 
-    # parse JSON robustly
+    raw = call_llm(prompt, state["plan"], max_tokens=token_budget)
+
+    parsed = None
     try:
-        parsed             = parse_llm_json(raw)
-        function_summaries = []
+        parsed = parse_llm_json(raw)
+    except ValueError as e:
+        if "TRUNCATED" in str(e) and state["plan"] == "pro":
+            print("  ⚠️ Truncated — retrying once with a larger token budget...")
+            retry_budget = min(token_budget * 2, 8192)
+            raw = call_mistral(prompt, max_tokens=retry_budget)
+            # raw = call_gemini(prompt, max_tokens=retry_budget)   # 👈 old Gemini retry path
+            try:
+                parsed = parse_llm_json(raw)
+            except Exception as e2:
+                print(f"  ⚠️ Still failed after retry: {e2}")
+        else:
+            print(f"  ⚠️ JSON parse failed: {e}")
 
+    if parsed is not None:
+        function_summaries = []
         for fn in functions:
             match = next(
                 (p for p in parsed if p.get("name") == fn["name"]),
@@ -281,26 +468,19 @@ You MUST respond with ONLY a valid JSON array — no markdown, no explanation, n
                 "returns": fn["returns"],
                 "summary": match["summary"] if match else "Summary not generated.",
             })
-            print(f"   ✅ {fn['name']}")
-
-    except Exception as e:
-        print(f"  ⚠️ JSON parse failed: {e}")
+            status = "✅" if match else "⚠️ (not found in parsed entries)"
+            print(f"   {status} {fn['name']}")
+    else:
         print(f"  Raw (first 300 chars): {raw[:300]}")
 
-        # fallback — extract per function from raw text
         function_summaries = []
         for fn in functions:
-            name    = fn["name"]
-            snippet = ""
-            if name in raw:
-                idx     = raw.find(name)
-                snippet = raw[idx: idx + 250].strip()
             function_summaries.append({
                 "name"   : fn["name"],
                 "args"   : fn["args"],
                 "lineno" : fn["lineno"],
                 "returns": fn["returns"],
-                "summary": snippet or "Could not parse summary.",
+                "summary": "Could not parse summary.",
             })
             print(f"   ⚠️ {fn['name']} (fallback)")
 
@@ -397,7 +577,7 @@ def print_report(report: dict):
 if __name__ == "__main__":
     print(f"🚀 Summarizer starting...")
     print(f"   File : {FILE_PATH}")
-    print(f"   Plan : {PLAN} ({'Gemini → Ollama fallback' if PLAN == 'pro' else 'Ollama'})")
+    print(f"   Plan : {PLAN} ({'Mistral → Ollama fallback' if PLAN == 'pro' else 'Ollama'})")
 
     initial_state: SummarizerState = {
         "file_path"          : FILE_PATH,
