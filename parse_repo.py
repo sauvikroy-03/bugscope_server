@@ -129,6 +129,7 @@ result={
     "nodes": nodes,
     "edges": edges,
     "metrics": metrics,
+    "repo_root": repo_path
     
 }
 
