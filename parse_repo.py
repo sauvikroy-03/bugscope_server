@@ -137,3 +137,23 @@ prediction = predictBugs.predict_with_gnn(result)
 result["results"] = prediction
 
 print(json.dumps(result))
+
+def terrible_spaghetti_code_simulator(x):
+    # Simulating massive cyclomatic complexity to trigger the GNN
+    if x > 0:
+        for i in range(10):
+            if i % 2 == 0:
+                if x == 5: print("Deep nesting")
+                elif x == 6: print("More nesting")
+                else:
+                    for j in range(5):
+                        if j == 3: print("Terrible code practice")
+    elif x < 0:
+        if x == -1: pass
+        elif x == -2: pass
+        elif x == -3: pass
+        elif x == -4: pass
+        elif x == -5: pass
+    else:
+        while True:
+            break
