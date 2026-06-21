@@ -510,17 +510,24 @@ def check_error(state: SummarizerState) -> str:
 # 6. BUILD GRAPH
 # ══════════════════════════════════════════════════════════════
 
+# ══════════════════════════════════════════════════════════════
+# 6. BUILD GRAPH (OPTIMIZED FAN-OUT / FAN-IN)
+# ══════════════════════════════════════════════════════════════
+
 def build_graph():
     graph = StateGraph(SummarizerState)
 
+    # Register all processing blocks
     graph.add_node("read_file",           read_file)
     graph.add_node("parse_functions",     parse_functions)
     graph.add_node("summarize_module",    summarize_module)
     graph.add_node("summarize_functions", summarize_functions)
     graph.add_node("build_report",        build_report)
 
+    # Set workflow entry criteria
     graph.set_entry_point("read_file")
 
+    # Error checking router
     graph.add_conditional_edges(
         "read_file",
         check_error,
@@ -530,10 +537,15 @@ def build_graph():
         }
     )
 
-    graph.add_edge("parse_functions",     "summarize_module")
-    graph.add_edge("summarize_module",    "summarize_functions")
+    # 🚀 THE FAN-OUT: parse_functions triggers BOTH analysis nodes simultaneously!
+    graph.add_edge("parse_functions", "summarize_module")
+    graph.add_edge("parse_functions", "summarize_functions")
+
+    # 🤝 THE FAN-IN: build_report waits for BOTH parallel tracks to finish and merges state automatically
+    graph.add_edge("summarize_module",    "build_report")
     graph.add_edge("summarize_functions", "build_report")
-    graph.add_edge("build_report",        END)
+    
+    graph.add_edge("build_report", END)
 
     return graph.compile()
 

@@ -18,7 +18,7 @@ router = APIRouter(
 
 class GenerateContextRequest(BaseModel):
     graph: Dict[str, Any]              # the full parse_repo.py output (nodes, edges, ...)
-    plan: Literal["free", "pro"] = "free"
+    plan: Literal["free", "pro"] = "pro"
     repo_root: Optional[str] = None    # OPTIONAL — absolute path to the repo on disk.
                                         # Strongly recommended: guarantees correct file
                                         # resolution. Without it, falls back to a glob
