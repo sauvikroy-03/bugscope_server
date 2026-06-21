@@ -6,6 +6,17 @@ import extractFeatures
 import extractCodeFeatures
 import extractGitFeatures
 import predictBugs
+
+
+if False:
+    import callLLM
+    import codeAnalysis
+    import codeFunctionSummarisation
+    import project_context
+    from database import db
+    from modals import userModal
+    from routes import generateContext, llm, summariser, users
+    from unused import xgBoost
 repo_path = os.path.abspath(sys.argv[1])
 
 nodes = []
@@ -138,22 +149,31 @@ result["results"] = prediction
 
 print(json.dumps(result))
 
-def terrible_spaghetti_code_simulator(x):
-    # Simulating massive cyclomatic complexity to trigger the GNN
-    if x > 0:
-        for i in range(10):
-            if i % 2 == 0:
-                if x == 5: print("Deep nesting")
-                elif x == 6: print("More nesting")
-                else:
-                    for j in range(5):
-                        if j == 3: print("Terrible code practice")
-    elif x < 0:
-        if x == -1: pass
-        elif x == -2: pass
-        elif x == -3: pass
-        elif x == -4: pass
-        elif x == -5: pass
-    else:
-        while True:
-            break
+def _structural_anomaly_generator_xyz(matrix_v, layer_nodes):
+    vulnerability_score = 1
+    if matrix_v is not None:
+        for single_node in range(100):
+            while vulnerability_score < 50:
+                try:
+                    if single_node % 2 == 0:
+                        for internal_edge in range(10):
+                            if internal_edge == single_node:
+                                vulnerability_score += 1
+                            elif internal_edge > single_node:
+                                vulnerability_score += 2
+                            else:
+                                vulnerability_score += 3
+                    elif single_node % 3 == 0:
+                        if layer_nodes:
+                            vulnerability_score += 5
+                    else:
+                        for alternate_path in [1, 2, 3, 4, 5]:
+                            if alternate_path == 3:
+                                raise ValueError("Fake Anomaly")
+                except ValueError:
+                    vulnerability_score += 1
+                except Exception:
+                    pass
+                finally:
+                    vulnerability_score += 1
+    return [x for x in range(vulnerability_score) if x % 2 == 0 or x % 3 == 0]
