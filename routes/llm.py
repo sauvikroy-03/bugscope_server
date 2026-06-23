@@ -22,25 +22,16 @@ def locate_absolute_path(relative_path: str) -> str:
     Searches inside the local 'repos' directory to locate the absolute path 
     of a file matching the trailing relative layout path structure.
     """
-    # 1. Standardize slashes to forward slashes
     clean_rel = relative_path.replace("\\", "/")
-    
-    # 2. Extract just the filename (e.g., 'getTrainsStatus.py')
     filename = clean_rel.split("/")[-1]
-    
-    # 3. Create a recursive search query targeting the 'repos' directory
-    # This is the direct Python equivalent of running: Get-ChildItem -Recurse
     search_pattern = os.path.join("repos", "**", filename)
     matches = glob(search_pattern, recursive=True)
     
-    # 4. Check our list matches to find the one matching your path layout
     for match in matches:
         normalized_match = match.replace("\\", "/")
         if normalized_match.endswith(clean_rel):
-            # Convert to an absolute system path with forward slashes
             return os.path.abspath(normalized_match).replace("\\", "/")
             
-    # Fallback to a basic merge layout if the search finds nothing
     return os.path.abspath(os.path.join("repos", clean_rel)).replace("\\", "/")
 
 # ── Models ────────────────────────────────────────────────────────────────────
@@ -55,8 +46,6 @@ class LLMRequest(BaseModel):
 def simplify_file_result(r: dict):
     metrics = r.get("important_metrics", {})
     raw_path = r.get("file") or ""
-    
-    # 💡 Dynamically scans the directories to find the file (just like PowerShell!)
     absolute_path = locate_absolute_path(raw_path)
     return {
         "full_path":        absolute_path,
@@ -68,7 +57,6 @@ def simplify_file_result(r: dict):
             "loc":                   metrics.get("loc"),
             "cyclomatic_complexity": metrics.get("cyclomatic_complexity"),
             "avg_function_length":   metrics.get("avg_function_length"),
-            
             "code_churn":            metrics.get("code_churn"),
             "commit_frequency":      metrics.get("commit_frequency"),
             "in_degree":             metrics.get("in_degree"),
@@ -121,7 +109,7 @@ def summarize_results(results: list):
 # ── LLM callers ───────────────────────────────────────────────────────────────
 
 def analyze_with_gemini(prompt: str) -> str:
-    print("🚀 Routing to Gemini (Pro user)")
+    print("🚀 Plan: PRO  |  Model: Gemini (gemini-2.5-flash)")
     response = gemini_client.models.generate_content(
         model="gemini-2.5-flash",
         contents=prompt,
@@ -135,7 +123,7 @@ def analyze_with_gemini(prompt: str) -> str:
 
 
 def analyze_with_ollama(prompt: str) -> str:
-    print("🚀 Routing to Ollama (Free user)")
+    print("🚀 Plan: FREE  |  Model: Ollama (phi4-mini:latest)")
     response = requests.post(
         "http://127.0.0.1:11434/api/generate",
         json={
@@ -186,10 +174,10 @@ No intro. No outro. Just the 3 steps.
 def get_fix_for_file(file_data: dict, plan: str) -> str:
     prompt = build_fix_prompt(file_data)
     try:
-        if plan == "pro":
-            return analyze_with_gemini(prompt)
-        else:
+        if plan == "free":
             return analyze_with_ollama(prompt)
+        else:
+            return analyze_with_gemini(prompt)
     except Exception as e:
         return f"Could not generate fix: {str(e)}"
 
@@ -204,13 +192,11 @@ def get_suggestions(req: LLMRequest):
 
         print("SELECTED FILES:", json.dumps(summary["selected_files"], indent=2))
 
-        # HIGH and MEDIUM files
         risky_files = [
             f for f in summary["selected_files"]
             if f["risk_level"] in ["HIGH", "MEDIUM"]
         ]
 
-        # dependency nodes that are LOW but architecturally important
         dep_nodes = [
             f for f in summary["selected_files"]
             if f not in risky_files and (
@@ -225,7 +211,6 @@ def get_suggestions(req: LLMRequest):
             print(f"🔧 Generating fix for: {f['file']}")
             fix_text = get_fix_for_file(f, req.plan)
 
-            # enrich affected files with full data from original results
             affected_enriched = []
             for af in f["directly_impacted_files"]:
                 full = next(
@@ -251,7 +236,6 @@ def get_suggestions(req: LLMRequest):
                 "fix":           fix_text,
             })
 
-        # sort: HIGH first, then MEDIUM, then by risk_score descending
         order = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
         cards.sort(key=lambda c: (order.get(c["risk_level"], 3), -c["risk_score"]))
 

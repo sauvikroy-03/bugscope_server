@@ -1,11 +1,12 @@
 # app/routes/users.py
+from datetime import datetime
 import os
 import razorpay
 from fastapi import APIRouter, HTTPException, status
 from database.db import db
 from modals import userModal
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 from dotenv import load_dotenv
 
 load_dotenv()  # safety net in case main.py didn't load it first
@@ -24,6 +25,7 @@ router = APIRouter(
 class OrderRequest(BaseModel):
     amount: int  # Amount in paise (e.g., ₹100 = 10000 paise)
     currency: str = "INR"
+
 
 
 # ── 1. RAZORPAY ORDER GENERATION ENDPOINT (POST) ─────────────────────────────
@@ -127,3 +129,46 @@ async def get_user_by_email(email: str):
         )
         
     return user_doc
+
+class PlanUpdateRequest(BaseModel):
+    plan: str              # e.g., "pro" or "premium"
+    billing_type: str      # e.g., "monthly"
+    price: int             # e.g., 499
+    payment_id: str        # From Razorpay verified callback success
+    order_id: str          # From Razorpay order genesis
+    due_date: Optional[str] = None
+
+@router.patch("/email/{email}/upgrade", status_code=status.HTTP_200_OK, response_model=userModal.User)
+async def upgrade_user_plan(email: str, payload: PlanUpdateRequest):
+    """
+    Locates an existing user profile by email and securely modifies their 
+    subscription plan properties following a verified Razorpay checkout.
+    """
+    # 1. Verify the user actually exists in MongoDB first
+    user = await db.users.find_one({"email": email})
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Cannot upgrade. User with email '{email}' does not exist."
+        )
+
+    # 2. Build the update payload mapped to your MongoDB schema keys
+    update_data = {
+        "plan": payload.plan,
+        "billing_type": payload.billing_type,
+        "price": payload.price,
+        "payment_id": payload.payment_id,
+        "order_id": payload.order_id,
+        "due_date": payload.due_date,
+        "updated_at": datetime.utcnow() # Keeps your tracking metrics clean
+    }
+
+    # 3. Perform the database update asynchronously using Motor ($set operator)
+    await db.users.update_one(
+        {"email": email},
+        {"$set": update_data}
+    )
+
+    # 4. Fetch and return the newly modified user state
+    updated_user = await db.users.find_one({"email": email})
+    return updated_user
